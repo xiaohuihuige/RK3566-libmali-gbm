@@ -36,5 +36,8 @@ typedef struct {
 
 drm_dev_t *creat_drm_device(const char *card);
 void drm_flush_wait(drm_dev_t * drm);
-
+int GetFD(drm_dev_t *drm);
+int modeSetCrtc(drm_dev_t *drm, uint32_t fb_id) ;
+int pageFlip(drm_dev_t *drm, uint32_t fb_id, void* user_data);
+int Run(drm_dev_t *drm, int fb_id1, int fb_id2);
 #endif

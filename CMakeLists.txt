@@ -18,6 +18,7 @@ pkg_check_modules (DRM libdrm)
 pkg_check_modules (GBM gbm)
 pkg_check_modules (EGL egl)
 pkg_check_modules (GLESV2 glesv2)
+#pkg_check_modules (MALI libmali)
 include_directories(
     ${DRM_INCLUDE_DIRS}
     ${GBM_INCLUDE_DIRS}
@@ -31,6 +32,6 @@ set(LIBS ${LIBS} ${DRM_LIBRARIES} ${GBM_LIBRARIES} ${EGL_LIBRARIES} ${GLESV2_LIB
 
 add_executable(gbm_es2_demo ${all_SRC})
 
-target_link_libraries(gbm_es2_demo ${LIBS})
+target_link_libraries(gbm_es2_demo "-lmali" ${LIBS})
 
 MESSAGE("gbm_es2_demo links " ${LIBS})

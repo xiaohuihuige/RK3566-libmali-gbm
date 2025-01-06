@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include "drm_device.h"
+#include "egl_context.h"
+#include "gles_demo.h"
 
 int main()
 {
@@ -10,5 +12,16 @@ int main()
         return -1;
     }
 
-    drm_flush_wait(drm);
+    egl_context *egl = init_egl(drm, NULL);
+    if (!egl) {
+        printf("--------------errrorrr----------\n");
+        return -1;
+    }
+    printf("--------------ok----------\n");
+    gles_demo_init(drm->dev->mode.hdisplay, drm->dev->mode.vdisplay);
+
+    //pageFlip(drm, egl->framebuffers_[0].fb_id, NULL);
+
+    Run(drm, egl->framebuffers_[0].fb_id, egl->framebuffers_[1].fb_id);
+    //drm_flush_wait(drm);
 }
