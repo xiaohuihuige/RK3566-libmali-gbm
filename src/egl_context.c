@@ -1,6 +1,47 @@
 #include "egl_context.h"
+#include <string.h>
+#include <stdio.h> 
+#include <stdlib.h>
+#include <assert.h>
 
-int _glfwStringInExtensionString(const char* string, const char* extensions)
+static void EGLSyncFence(EGLGlue *egl_context_) 
+{
+    if (egl_context_->egl_sync_supported) {
+        EGLSyncKHR sync = egl_context_->CreateSyncKHR(egl_context_->display, EGL_SYNC_FENCE_KHR, NULL);
+        glFlush();
+        egl_context_->ClientWaitSyncKHR(egl_context_->display, sync, 0, EGL_FOREVER_KHR);
+    } else {
+        glFinish();
+    }
+}
+
+static void printfEglFPS(unsigned long usec)
+{
+    static int num_frames = 0;
+    static unsigned long lasttime = 0;
+    static const size_t one_sec = 1000000;
+    num_frames++;
+    unsigned long elapsed = usec - lasttime;
+    if (elapsed > one_sec) {
+        printf("FPS: %4f \n", num_frames / ((double)elapsed / one_sec));
+        num_frames = 0;
+        lasttime = usec;
+    }
+}
+
+void didEGLPageFlip(unsigned int sec, unsigned int usec, void *data) 
+{
+    assert(data);
+    printfEglFPS(usec);
+    egl_window *egl = (egl_window *)data;
+    glBindFramebuffer(GL_FRAMEBUFFER, egl->framebuffers_[egl->front_buffer_].gl_fb);
+    printf("fb_id %d\n", egl->framebuffers_[egl->front_buffer_].fb_id);
+    if (egl->callback_)
+        egl->callback_(egl->framebuffers_[egl->front_buffer_].gl_fb, sec * 1000000 + usec);
+    EGLSyncFence(&egl->egl_context_);
+}
+
+static int glfwStringInExtensionString(const char* string, const char* extensions)
 {
     const char* start = extensions;
 
@@ -11,7 +52,7 @@ int _glfwStringInExtensionString(const char* string, const char* extensions)
 
         where = strstr(start, string);
         if (!where)
-            return GLFW_FASE;
+            return GLFW_FALS;
 
         terminator = where + strlen(string);
         if (where == start || *(where - 1) == ' ')
@@ -26,113 +67,114 @@ int _glfwStringInExtensionString(const char* string, const char* extensions)
     return GLFW_TRUE;
 }
 
-int InitializeEGL(egl_context *egl)
+static int initializeEGL(EGLGlue *egl_context_)
 {
-    //egl->egl_.QueryDevicesEXT =(PFNEGLQUERYDEVICESEXTPROC)eglGetProcAddress("eglQueryDevicesEXT");
-    egl->egl_.CreateImageKHR = (PFNEGLCREATEIMAGEKHRPROC)eglGetProcAddress("eglCreateImageKHR");
-    egl->egl_.DestroyImageKHR =(PFNEGLDESTROYIMAGEKHRPROC)eglGetProcAddress("eglDestroyImageKHR");
-    egl->egl_.EGLImageTargetTexture2DOES =(PFNGLEGLIMAGETARGETTEXTURE2DOESPROC)eglGetProcAddress("glEGLImageTargetTexture2DOES");
-    egl->egl_.CreateSyncKHR = (PFNEGLCREATESYNCKHRPROC)eglGetProcAddress("eglCreateSyncKHR");
-    egl->egl_.ClientWaitSyncKHR = (PFNEGLCLIENTWAITSYNCKHRPROC)eglGetProcAddress("eglClientWaitSyncKHR");
+    assert(egl_context_);
 
-    if (!egl->egl_.CreateImageKHR || !egl->egl_.DestroyImageKHR 
-        || !egl->egl_.EGLImageTargetTexture2DOES) {
-        fprintf(stderr, "eglGetProcAddress returned nullptr for a required extension entry " "point. %p\n", egl->egl_.QueryDevicesEXT);
-        return GLFW_FASE;
+    egl_context_->CreateImageKHR = (PFNEGLCREATEIMAGEKHRPROC)eglGetProcAddress("eglCreateImageKHR");
+    egl_context_->DestroyImageKHR =(PFNEGLDESTROYIMAGEKHRPROC)eglGetProcAddress("eglDestroyImageKHR");
+    egl_context_->EGLImageTargetTexture2DOES =(PFNGLEGLIMAGETARGETTEXTURE2DOESPROC)eglGetProcAddress("glEGLImageTargetTexture2DOES");
+    egl_context_->CreateSyncKHR = (PFNEGLCREATESYNCKHRPROC)eglGetProcAddress("eglCreateSyncKHR");
+    egl_context_->ClientWaitSyncKHR = (PFNEGLCLIENTWAITSYNCKHRPROC)eglGetProcAddress("eglClientWaitSyncKHR");
+
+    if (!egl_context_->CreateImageKHR || !egl_context_->DestroyImageKHR 
+        || !egl_context_->EGLImageTargetTexture2DOES) {
+        printf("eglGetProcAddress returned nullptr for a required extension entry point.\n");
+        return GLFW_FALS;
     }
 
-    if (egl->egl_.CreateSyncKHR && egl->egl_.ClientWaitSyncKHR) {
-        egl->egl_.egl_sync_supported = 1;
+    if (egl_context_->CreateSyncKHR && egl_context_->ClientWaitSyncKHR) {
+        egl_context_->egl_sync_supported = 1;
     } else {
-        egl->egl_.egl_sync_supported = 0;
+        egl_context_->egl_sync_supported = 0;
     }
 
     EGLint major, minor = 0;
-    egl->egl_.display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-    printf("Using display %p with EGL version %d.%d\n", egl->egl_.display, major, minor);
+    egl_context_->display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+    printf("Using display %p with EGL version %d.%d\n", egl_context_->display, major, minor);
         
-    if (!eglInitialize(egl->egl_.display, &major, &minor)) {
-        fprintf(stderr, "failed to initialize\n");
-        return GLFW_FASE;
+    if (!eglInitialize(egl_context_->display, &major, &minor)) {
+        printf("failed to initialize\n");
+        return GLFW_FALS;
     }
 
-    printf("Using display %p with EGL version %d.%d\n", egl->egl_.display, major, minor);
-    printf("EGL Version \"%s\"\n", eglQueryString(egl->egl_.display, EGL_VERSION));
-    printf("EGL Vendor \"%s\"\n", eglQueryString(egl->egl_.display, EGL_VENDOR));
+    printf("Using display %p with EGL version %d.%d\n", egl_context_->display, major, minor);
+    printf("EGL Version \"%s\"\n", eglQueryString(egl_context_->display, EGL_VERSION));
+    printf("EGL Vendor \"%s\"\n", eglQueryString(egl_context_->display, EGL_VENDOR));
 
     if (!eglBindAPI(EGL_OPENGL_ES_API)) {
-        fprintf(stderr, "failed to bind api EGL_OPENGL_ES_API\n");
-        return GLFW_FASE;
+        printf("failed to bind api EGL_OPENGL_ES_API\n");
+        return GLFW_FALS;
     }
 
     static const EGLint config_attribs[] = {EGL_SURFACE_TYPE, EGL_DONT_CARE, EGL_NONE};
     EGLint num_config = 0;
-    if (!eglChooseConfig(egl->egl_.display, config_attribs, &egl->egl_.config, 1, &num_config) || num_config != 1) {
-        fprintf(stderr, "failed to choose config: %d\n", num_config);
-        return GLFW_FASE;
+    if (!eglChooseConfig(egl_context_->display, config_attribs, &egl_context_->config, 1, &num_config) || num_config != 1) {
+        printf("failed to choose config: %d\n", num_config);
+        return GLFW_FALS;
     }
 
     static const EGLint context_attribs[] = {EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE};
-    egl->egl_.context = eglCreateContext(egl->egl_.display, egl->egl_.config, EGL_NO_CONTEXT, context_attribs);
-    if (egl->egl_.context == NULL) {
-        fprintf(stderr, "failed to create context\n");
-        return GLFW_FASE;
+    egl_context_->context = eglCreateContext(egl_context_->display, egl_context_->config, EGL_NO_CONTEXT, context_attribs);
+    if (egl_context_->context == NULL) {
+        printf("failed to create context\n");
+        return GLFW_FALS;
     }
 
     /* connect the context to the surface */
-    if (!eglMakeCurrent( egl->egl_.display, EGL_NO_SURFACE /* no default draw surface */, EGL_NO_SURFACE /* no default draw read */, egl->egl_.context)) {
-        fprintf(stderr, "failed to make the OpenGL ES Context current: \n");
-        return GLFW_FASE;
+    if (!eglMakeCurrent(egl_context_->display, EGL_NO_SURFACE /* no default draw surface */, EGL_NO_SURFACE /* no default draw read */, egl_context_->context)) {
+        printf("failed to make the OpenGL ES Context current: \n");
+        return GLFW_FALS;
     }
 
-    const char* egl_extensions = eglQueryString(egl->egl_.display, EGL_EXTENSIONS);
+    const char* egl_extensions = eglQueryString(egl_context_->display, EGL_EXTENSIONS);
     printf("EGL Extensions \"%s\"\n", egl_extensions);
-    if (!_glfwStringInExtensionString("EGL_KHR_image_base", egl_extensions)) {
-        fprintf(stderr, "EGL_KHR_image_base extension not supported\n");
-        return GLFW_FASE;
+    if (!glfwStringInExtensionString("EGL_KHR_image_base", egl_extensions)) {
+        printf("EGL_KHR_image_base extension not supported\n");
+        return GLFW_FALS;
     }
-    if (!_glfwStringInExtensionString("EGL_EXT_image_dma_buf_import", egl_extensions)) {
-        fprintf(stderr, "EGL_EXT_image_dma_buf_import extension not supported\n");
-        return GLFW_FASE;
+    if (!glfwStringInExtensionString("EGL_EXT_image_dma_buf_import", egl_extensions)) {
+        printf("EGL_EXT_image_dma_buf_import extension not supported\n");
+        return GLFW_FALS;
     }
 
     const char* gl_extensions = (const char*)glGetString(GL_EXTENSIONS);
-    if (!_glfwStringInExtensionString("GL_OES_EGL_image", gl_extensions)) {
-        fprintf(stderr, "GL_OES_EGL_image extension not supported\n");
-        return GLFW_FASE;
+    if (!glfwStringInExtensionString("GL_OES_EGL_image", gl_extensions)) {
+        printf("GL_OES_EGL_image extension not supported\n");
+        return GLFW_FALS;
     }
 
     return GLFW_TRUE;
 }
 
 
- 
-int Createframebuffer(int width, int height, int drmfd, struct gbm_device* gbm_, Framebuffer *buffer, EGLGlue *egl_) 
+static int createframebuffer(int width, int height, int drmfd, egl_window *egl, int number) 
 {
-    printf("----width %d, height %d-\n", width, height);
-    buffer->bo = gbm_bo_create(gbm_, width, height, GBM_FORMAT_XRGB8888, GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING);
-    if (!buffer->bo) {
-        fprintf(stderr, "failed to create a gbm buffer.\n");
-        return GLFW_FASE;
+    assert(egl);
+
+    egl->framebuffers_[number].bo = gbm_bo_create(egl->gbm_, width, height, GBM_FORMAT_XRGB8888, GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING);
+    if (!egl->framebuffers_[number].bo) {
+        printf("failed to create a gbm buffer.\n");
+        return GLFW_FALS;
     }
 
-    buffer->fd = gbm_bo_get_fd(buffer->bo);
-    if (buffer->fd < 0) {
-        fprintf(stderr, "failed to get fb for bo: %d", buffer->fd);
-        return GLFW_FASE;
+    egl->framebuffers_[number].fd = gbm_bo_get_fd(egl->framebuffers_[number].bo);
+    if (egl->framebuffers_[number].fd < 0) {
+        printf("failed to get fb for bo: %d", egl->framebuffers_[number].fd);
+        return GLFW_FALS;
     }
 
-    uint32_t handle = gbm_bo_get_handle(buffer->bo).u32;
-    uint32_t stride = gbm_bo_get_stride(buffer->bo);
+    uint32_t handle = gbm_bo_get_handle(egl->framebuffers_[number].bo).u32;
+    uint32_t stride = gbm_bo_get_stride(egl->framebuffers_[number].bo);
     uint32_t offset = 0;
-    drmModeAddFB2(drmfd, width, height, GBM_FORMAT_XRGB8888, &handle, &stride, &offset, &buffer->fb_id, 0);
-    if (!buffer->fb_id) {
-        fprintf(stderr, "failed to create framebuffers_[0] from buffer object.\n");
-        return GLFW_FASE;
+    drmModeAddFB2(drmfd, width, height, GBM_FORMAT_XRGB8888, &handle, &stride, &offset, &egl->framebuffers_[number].fb_id, 0);
+    if (!egl->framebuffers_[number].fb_id) {
+        printf("failed to create framebuffers_[0] from buffer object.\n");
+        return GLFW_FALS;
     }
 
     const EGLint khr_image_attrs[] = {EGL_DMA_BUF_PLANE0_FD_EXT,
-                                        buffer->fd,
+                                        egl->framebuffers_[number].fd,
                                         EGL_WIDTH,
                                         width,
                                         EGL_HEIGHT,
@@ -140,73 +182,64 @@ int Createframebuffer(int width, int height, int drmfd, struct gbm_device* gbm_,
                                         EGL_LINUX_DRM_FOURCC_EXT,
                                         GBM_FORMAT_XRGB8888,
                                         EGL_DMA_BUF_PLANE0_PITCH_EXT,
-                                        stride,
+                                        (int)stride,
                                         EGL_DMA_BUF_PLANE0_OFFSET_EXT,
-                                        offset,
+                                        (int)offset,
                                         EGL_NONE};
 
-    buffer->image = egl_->CreateImageKHR(egl_->display, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, NULL, khr_image_attrs);
-    if (buffer->image == EGL_NO_IMAGE_KHR) {
-        fprintf(stderr, "failed to make image from buffer object: \n");
-        return GLFW_FASE;
+    egl->framebuffers_[number].image = egl->egl_context_.CreateImageKHR(egl->egl_context_.display, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, NULL, khr_image_attrs);
+    if (egl->framebuffers_[number].image == EGL_NO_IMAGE_KHR) {
+        printf("failed to make image from buffer object: \n");
+        return GLFW_FALS;
     }
 
-    glGenTextures(1, &buffer->gl_tex);
-    glBindTexture(GL_TEXTURE_2D, buffer->gl_tex);
-    egl_->EGLImageTargetTexture2DOES(GL_TEXTURE_2D, buffer->image);
+    glGenTextures(1, &egl->framebuffers_[number].gl_tex);
+    glBindTexture(GL_TEXTURE_2D, egl->framebuffers_[number].gl_tex);
+    egl->egl_context_.EGLImageTargetTexture2DOES(GL_TEXTURE_2D, egl->framebuffers_[number].image);
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    glGenFramebuffers(1, &buffer->gl_fb);
-    glBindFramebuffer(GL_FRAMEBUFFER, buffer->gl_fb);
+    glGenFramebuffers(1, &egl->framebuffers_[number].gl_fb);
+    glBindFramebuffer(GL_FRAMEBUFFER, egl->framebuffers_[number].gl_fb);
 
-
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, buffer->gl_tex, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, egl->framebuffers_[number].gl_tex, 0);
 
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        fprintf(stderr, "failed framebuffer check for created target buffer: %x\n", glCheckFramebufferStatus(GL_FRAMEBUFFER));
-        glDeleteFramebuffers(1, &buffer->gl_fb);
-        glDeleteTextures(1, &buffer->gl_tex);
-        return GLFW_FASE;
+        printf("failed framebuffer check for created target buffer: %x\n", glCheckFramebufferStatus(GL_FRAMEBUFFER));
+        glDeleteFramebuffers(1, &egl->framebuffers_[number].gl_fb);
+        glDeleteTextures(1, &egl->framebuffers_[number].gl_tex);
+        return GLFW_FALS;
     }
-    printf("buffer fd %d \n", buffer->fb_id);
+    printf("buffer fd %d,%d\n", egl->framebuffers_[number].fb_id, egl->framebuffers_[number].gl_fb);
     return GLFW_TRUE;
 }
 
-
-egl_context *init_egl(drm_dev_t *drm_, SwapBuffersCallback callback)
+egl_window *initEglWindow(int drmfd, int height, int width, SwapBuffersCallback callback_)
 {
-    egl_context *egl = (egl_context *)malloc(sizeof(egl_context));
-    if (!egl) {
+    egl_window *egl = (egl_window *)malloc(sizeof(egl_window));
+    if (!egl) 
         return NULL;
-    }
 
-    egl->gbm_ = gbm_create_device(GetFD(drm_));
-    if (!egl->gbm_) {
-        return NULL;
-    }
+    do {
+        egl->gbm_ = gbm_create_device(drmfd);
+        if (!egl->gbm_) 
+            break;
 
-    if (!InitializeEGL(egl)) {
-        printf("create buffer errror\n");
-        return NULL;
-    }
+        if (!initializeEGL(&egl->egl_context_))  
+            break;
 
-    for (int i = 0; i < 2; i++)
-    {
-        Framebuffer buffer;
-        if (GLFW_FASE == Createframebuffer(drm_->dev->mode.hdisplay, drm_->dev->mode.vdisplay, drm_->drmfd, egl->gbm_, &buffer, &egl->egl_)) {
-            printf("create buffer errror\n");
-            return NULL;
+        for (int i = 0; i < NUM_BUFFERS; i++) {
+            if (!createframebuffer(height, width, drmfd, egl, i)) 
+                break;
         }
-        egl->framebuffers_[i].bo = buffer.bo;
-        egl->framebuffers_[i].fd = buffer.fd;
-        egl->framebuffers_[i].fb_id = buffer.fb_id;
-        egl->framebuffers_[i].image = buffer.image;
-        egl->framebuffers_[i].gl_tex = buffer.gl_tex;
-        egl->framebuffers_[i].gl_fb = buffer.gl_fb;
-    }
 
-    printf("------------%d,%d\n", egl->framebuffers_[0].fb_id, egl->framebuffers_[1].fb_id);
-    modeSetCrtc(drm_, egl->framebuffers_[0].fb_id); 
+        egl->front_buffer_ = 0;
+        egl->callback_ = callback_;
 
-    return egl;
+        return egl;    
+    } while(0);
+
+    if (egl)
+        free(egl);
+
+    return NULL;
 }

@@ -10,11 +10,10 @@
 #include <unistd.h>
 #include <xf86drm.h>
 #include <xf86drmMode.h>
-#include "drm_device.h"
 
 #define NUM_BUFFERS 2
 #define GLFW_TRUE   1
-#define GLFW_FASE   0
+#define GLFW_FALS   0
 
 typedef void (*SwapBuffersCallback)(GLuint, unsigned long);
 
@@ -29,7 +28,6 @@ typedef struct {
     PFNGLEGLIMAGETARGETTEXTURE2DOESPROC EGLImageTargetTexture2DOES;
     PFNEGLCREATESYNCKHRPROC CreateSyncKHR;
     PFNEGLCLIENTWAITSYNCKHRPROC ClientWaitSyncKHR;
-    PFNEGLQUERYDEVICESEXTPROC   QueryDevicesEXT;
     int egl_sync_supported;
 } EGLGlue;
 
@@ -44,14 +42,14 @@ typedef struct {
 
 typedef struct 
 {
+    unsigned int front_buffer_;
     struct gbm_device* gbm_;
-    EGLGlue egl_;
+    EGLGlue egl_context_;
     Framebuffer framebuffers_[NUM_BUFFERS];
-    drm_dev_t *drm_;
     SwapBuffersCallback callback_;
-} egl_context;
+} egl_window;
 
-
-egl_context *init_egl(drm_dev_t *drm_, SwapBuffersCallback callback);
+egl_window *initEglWindow(int drmfd, int height, int width, SwapBuffersCallback callback_);
+void didEGLPageFlip(unsigned int sec, unsigned int usec, void *data);
 
 #endif

@@ -1,137 +1,126 @@
 #include "drm_device.h"
+#include <assert.h>
+#include <string.h>
+#include <stdlib.h>
 
-static int _opengDevice(drm_dev_t * drm, const char *card) {
-    drm->drmfd = open(card, O_RDWR | O_CLOEXEC);
-    if (drm->drmfd < 0) {
-        fprintf(stderr, "cannot open '%s':\n", card);
-        return -1;
+static int opengDevice(const char *card) 
+{
+    assert(card);
+    int drmfd = open(card, O_RDWR | O_CLOEXEC);
+    if (drmfd < 0) {
+        printf("cannot open '%s':\n", card);
+        return GLFW_FALS;
     }
-    printf("open fd success: %d\n", drm->drmfd);
-    return 0;
+    return drmfd;
 }
 
-static int _findCrtc(int fd, drmModeRes* res, drmModeConnector* conn, uint32_t* crtc_out) {
-    /* first try the currently conected encoder+crtc */
-    if (conn->encoder_id) {
-        drmModeEncoder* enc = drmModeGetEncoder(fd, conn->encoder_id);
+static int findCrtc(int fd, drmModeRes* res, drmModeConnector* conn, uint32_t* crtc_out) 
+{
+    assert(res && conn && crtc_out);
+    for (int i = 0; i < conn->count_encoders; ++i) {
+        drmModeEncoder* enc = drmModeGetEncoder(fd, conn->encoders[i]);
+        if (!enc) {
+            printf("cannot retrieve encoder %u:%u (%d): %m\n", i, conn->encoders[i], errno);
+            continue;
+        }
+
         if (enc && enc->crtc_id) {
             uint32_t crtc = enc->crtc_id;
             if (crtc >= 0) {
                 drmModeFreeEncoder(enc);
                 *crtc_out = crtc;
-                return 0;
+                return GLFW_TRUE;
             }
         }
         drmModeFreeEncoder(enc);
     }
-    
-    for (int i = 0; i < conn->count_encoders; ++i) {
-        drmModeEncoder* enc = drmModeGetEncoder(fd, conn->encoders[i]);
-        if (!enc) {
-            fprintf(stderr, "cannot retrieve encoder %u:%u (%d): %m\n", i, conn->encoders[i], errno);
-            continue;
-        }
 
-        /* iterate all global CRTCs */
-        for (int j = 0; j < res->count_crtcs; ++j) {
-            /* check whether this CRTC works with the encoder */
-            if (!(enc->possible_crtcs & (1 << j)))
-                continue;
-
-            /* we have found a CRTC, so save it and return */
-            if (res->crtcs[j] >= 0) {
-                drmModeFreeEncoder(enc);
-                *crtc_out = res->crtcs[j];
-                return 0;
-            }
-        }
-
-        drmModeFreeEncoder(enc);
-    }
-
-    fprintf(stderr, "cannot find suitable CRTC for connector %u\n", conn->connector_id);
-    return -1;
+    printf("cannot find suitable CRTC for connector %u\n", conn->connector_id);
+    return GLFW_FALS;
 }
 
-
-static int _getConnector(drm_dev_t * drm) {
+static ModesetDev *getConnector(int drmfd) 
+{
     /* retrieve resources */
-    drmModeRes* res = drmModeGetResources(drm->drmfd);
-    if (!res) {
-        fprintf(stderr, "cannot retrieve DRM resources (%d): %m\n", errno);
-        return -1;
+    drmModeRes* res_info = drmModeGetResources(drmfd);
+    if (!res_info) {
+        printf("cannot retrieve DRM resources (%d): %m\n", errno);
+        return NULL;
     }
 
     /* iterate all connectors */
-    for (int i = 0; i < res->count_connectors; ++i) {
+    for (int i = 0; i < res_info->count_connectors; ++i) {
         /* get information for each connector */
-        drmModeConnector* conn = drmModeGetConnector(drm->drmfd, res->connectors[i]);
+        drmModeConnector* conn = drmModeGetConnector(drmfd, res_info->connectors[i]);
         if (!conn) {
-            fprintf(stderr, "cannot retrieve DRM connector %u:%u (%d): %m\n", i,res->connectors[i], errno);
+            printf("cannot retrieve DRM connector %u:%u (%d): %m\n", i,res_info->connectors[i], errno);
             continue;
         }
 
         /* check if a monitor is connected */
         if (conn->connection != DRM_MODE_CONNECTED) {
             drmModeFreeConnector(conn);
-            fprintf(stderr, "ignoring unused connector %u\n", conn->connector_id);
+            printf("ignoring unused connector %u\n", conn->connector_id);
             continue;
         }
 
         /* check if there is at least one valid mode */
         if (!conn->count_modes) {
             drmModeFreeConnector(conn);
-            fprintf(stderr, "no valid mode for connector %u\n", conn->connector_id);
+            printf("no valid mode for connector %u\n", conn->connector_id);
             continue;
         }
 
-        drm->dev = (ModesetDev *)malloc(sizeof(ModesetDev));
-        if (!drm->dev) {
-            fprintf(stderr, "no valid mode for connector %u\n", conn->connector_id);
-            return -1;
+        ModesetDev *drm_dev = (ModesetDev *)malloc(sizeof(ModesetDev));
+        if (!drm_dev) {
+            drmModeFreeConnector(conn);
+            printf("no valid mode for connector %u\n", conn->connector_id);
+            return NULL;
         }
 
-        drm->dev->conn = conn->connector_id;
-        drm->dev->mode = conn->modes[0];
+        drm_dev->conn = conn->connector_id;
+        drm_dev->mode = conn->modes[0];
 
         /* find a crtc for this connector */
-        if (_findCrtc(drm->drmfd, res, conn, &drm->dev->crtc)) {
-            fprintf(stderr, "cannot setup device for connector %u:%u (%d): %m\n", i, res->connectors[i], errno);
+        if (!findCrtc(drmfd, res_info, conn, &drm_dev->crtc)) {
+            printf("cannot setup device for connector %u:%u (%d): %m\n", i, res_info->connectors[i], errno);
             drmModeFreeConnector(conn);
             continue;
         }
-        printf("drm->dev->crtc %d \n",drm->dev->crtc);
+        printf("drm->dev->crtc %d \n",drm_dev->crtc);
         drmModeFreeConnector(conn);
-        break;
+        return drm_dev;
     }
 
     /* free resources again */
-    drmModeFreeResources(res);
-    return 0;
+    drmModeFreeResources(res_info);
+
+    return NULL;
 }
 
-int pageFlip(drm_dev_t *drm, uint32_t fb_id, void* user_data) {
+static int pageFlip(drm_dev_t *drm, uint32_t fb_id, void* user_data) {
+    assert(drm);
     int ret = drmModePageFlip(drm->drmfd, drm->dev->crtc, fb_id, DRM_MODE_PAGE_FLIP_EVENT, user_data);
     if (ret) {
-        fprintf(stderr, "failed to queue page flip\n");
-        return -1;
+        printf("failed to queue page flip\n");
+        return GLFW_FALS;
     }
-    return 0;
+    return GLFW_TRUE;
 }
 
 int modeSetCrtc(drm_dev_t *drm, uint32_t fb_id) 
 {
+    assert(drm);
     drm->dev->saved_crtc = drmModeGetCrtc(drm->drmfd, drm->dev->crtc);
-    printf("params %d,%d,%d,%d\n", drm->drmfd, drm->dev->crtc, fb_id, drm->dev->conn);
     int ret = drmModeSetCrtc(drm->drmfd, drm->dev->crtc, fb_id, 0, 0, &drm->dev->conn, 1, &drm->dev->mode);
     if (ret) {
         printf( "cannot set CRTC for connector %u (%d): %m\n", drm->dev->conn, errno);
-        return -1;
+        return GLFW_FALS;
     }
-    return 0;
+    return GLFW_TRUE;
 }
 
-static void _freeModeSetCrtc(drm_dev_t *drm)
+static void freeModeSetCrtc(drm_dev_t *drm)
 {
     drmModeSetCrtc(drm->drmfd, 
                     drm->dev->saved_crtc->crtc_id, 
@@ -145,39 +134,47 @@ static void _freeModeSetCrtc(drm_dev_t *drm)
     close(drm->drmfd);
 }
 
-Resolution *_getDisplaySize(drm_dev_t *drm) 
+int getHeight(drm_dev_t *drm)
 {
-    Resolution *res = (Resolution *)malloc(sizeof(Resolution));
-    if (!res) {
-        return NULL;
-    }
-
-    res->height = drm->dev->mode.hdisplay;
-    res->width  =drm->dev->mode.vdisplay;
-
-    return res;
+    assert(drm);    
+    return drm->dev->mode.hdisplay;
 }
 
-int GetFD(drm_dev_t *drm)
+int getWidth(drm_dev_t *drm)
 {
+    assert(drm);    
+    return drm->dev->mode.vdisplay;
+}
+
+int getDrmFd(drm_dev_t *drm)
+{
+    assert(drm);    
     return drm->drmfd;
 }
 
-static void _onModesetPageFlipEvent(int fd, unsigned int frame, unsigned int sec, unsigned int usec, void* data) {
-    // DRMModesetter::Impl* self = static_cast<DRMModesetter::Impl *>(data);
-    // self->DidPageFlip(sec, usec);
+static void onModesetPageFlipEvent(int fd, unsigned int frame, unsigned int sec, unsigned int usec, void* data) 
+{
+    assert(data);  
+    didEGLPageFlip(sec, usec, data);
     printf("flip\n");
 }
 
-
-void drm_flush_wait(drm_dev_t * drm)
+void drmFlushWait(drm_dev_t * drm, void *user_data, uint32_t fb_id)
 {
+    assert(drm);    
+
     struct pollfd pfd;
     pfd.fd = drm->drmfd;
-    pfd.events = POLLIN;
+    pfd.events = POLLIN | POLLPRI; 
     
-    drm->evctx.version           = DRM_EVENT_CONTEXT_VERSION;
-    drm->evctx.page_flip_handler = _onModesetPageFlipEvent;
+    drmEventContext evctx = {};
+    evctx.version = DRM_EVENT_CONTEXT_VERSION;
+    evctx.page_flip_handler = onModesetPageFlipEvent;
+
+    if (!pageFlip(drm, fb_id, user_data)) {
+        printf("page flip error\n");
+        return;
+    }
 
     while(drm->req) {
         int ret;
@@ -185,8 +182,9 @@ void drm_flush_wait(drm_dev_t * drm)
             ret = poll(&pfd, 1, -1);
         } while(ret == -1 && errno == EINTR);
 
-        if(ret > 0)
-            drmHandleEvent(drm->drmfd, &drm->evctx);
+        if(ret > 0) {
+            drmHandleEvent(drm->drmfd, &evctx);
+        }
         else {
             printf("poll failed: %s\n", strerror(errno));
             return;
@@ -194,71 +192,28 @@ void drm_flush_wait(drm_dev_t * drm)
     }
 }
 
-int Run(drm_dev_t *drm, int fb_id1, int fb_id2) {
-    fd_set fds;
-    drmEventContext evctx = {};
-    evctx.version = DRM_EVENT_CONTEXT_VERSION;
-    evctx.page_flip_handler = _onModesetPageFlipEvent;
-    int is_running = 1;
-    int front_buffer_ = 0;
-
-    while (is_running) {
-        front_buffer_ ^= 1;
-        if (!pageFlip(drm, fb_id2 ,NULL)) {
-            printf("failed page flip.\n");
-            return -1;
-        }
-
-        int page_flip_pending_ = 1;
-        while (page_flip_pending_) {
-            FD_ZERO(&fds);
-            FD_SET(0, &fds);
-            FD_SET(GetFD(drm), &fds);
-
-            int ret = select(GetFD(drm) + 1, &fds, NULL, NULL, NULL);
-            if (ret < 0) {
-                //std::cout << "select err: " << std::strerror(errno) << '\n';
-                return -1;
-            } else if (ret == 0) {
-                fprintf(stderr, "select timeout!\n");
-                return -1;
-            }
-
-            if (FD_ISSET(0, &fds)) {
-                is_running = 0;
-            }
-
-            if (FD_ISSET(GetFD(drm), &fds)) {
-                drmHandleEvent(GetFD(drm), &evctx);
-            }
-        }
-            
-        if (FD_ISSET(0, &fds)) {
-            printf("exit due to user-input\n");
-        }
-    }
-    return 0;
-}
-
-drm_dev_t *creat_drm_device(const char *card)
+drm_dev_t *initDRMDevice(const char *card)
 {
-    drm_dev_t * drm = (drm_dev_t *)malloc(sizeof(drm_dev_t));
-    if (!drm) 
+    drm_dev_t * drm_dev = (drm_dev_t *)malloc(sizeof(drm_dev_t));
+    if (!drm_dev) 
         return NULL;
-    
-    if (_opengDevice(drm, card))
-    {
-        printf("------open error---\n");
-        return NULL;
-    }
 
-    if (_getConnector(drm))
-    {
-        printf("------getConnector---\n");
-        return NULL;
-    }
+    do {
+        drm_dev->drmfd = opengDevice(card);
+        if (!drm_dev->drmfd) 
+            break;
 
-    drm->req = 1;
+        drm_dev->dev = getConnector(drm_dev->drmfd);
+        if (!drm_dev->dev) 
+            break;
 
-    return drm;
+        drm_dev->req = 1;
+
+        return drm_dev;
+    } while (0);
+ 
+    if (drm_dev) 
+        free(drm_dev);
+        
+    return NULL;
 }

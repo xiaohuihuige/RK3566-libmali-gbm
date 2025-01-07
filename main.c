@@ -2,26 +2,34 @@
 #include "drm_device.h"
 #include "egl_context.h"
 #include "gles_demo.h"
+#include <stdlib.h>
 
 int main()
 {
-    const char* card = "/dev/dri/card0";
-    drm_dev_t *drm = creat_drm_device(card);
+    drm_dev_t *drm = initDRMDevice("/dev/dri/card0");
     if (!drm) {
-        printf("--------------errrorrr----------\n");
-        return -1;
+        printf("initDRMDevice error \n");
+        return EXIT_FAILURE;
     }
 
-    egl_context *egl = init_egl(drm, NULL);
+    egl_window *egl = initEglWindow(getDrmFd(drm), getHeight(drm), getWidth(drm), didPageFlip);
     if (!egl) {
-        printf("--------------errrorrr----------\n");
-        return -1;
+        printf("create egl window error\n");
+        return EXIT_FAILURE;
     }
-    printf("--------------ok----------\n");
-    gles_demo_init(drm->dev->mode.hdisplay, drm->dev->mode.vdisplay);
 
-    //pageFlip(drm, egl->framebuffers_[0].fb_id, NULL);
+    gles_demo *demo = initGLESDemo(getWidth(drm), getHeight(drm));
+    if (!demo) {
+        printf("initGLESDemo error\n");
+        return EXIT_FAILURE;
+    }
 
-    Run(drm, egl->framebuffers_[0].fb_id, egl->framebuffers_[1].fb_id);
-    //drm_flush_wait(drm);
+    if (!modeSetCrtc(drm, egl->framebuffers_[egl->front_buffer_].fb_id)) {
+        printf("modeSetCrtcerror\n");
+        return EXIT_FAILURE;
+    }
+
+    drmFlushWait(drm, egl, egl->framebuffers_[egl->front_buffer_].fb_id);
+
+    return EXIT_SUCCESS;
 }
