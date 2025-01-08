@@ -4,16 +4,17 @@
 #include <GLES2/gl2.h>
 #include "egl_context.h"
 
+typedef void *(*initGLESDmoe)(int, int);
+
 typedef struct  
 {
-    GLuint program_;
-    GLint modelviewmatrix_;
-    GLint modelviewprojectionmatrix_;
-    GLint normalmatrix_;
-    GLuint vbo_;
+    initGLESDmoe demoCallback_;
+    SwapBuffersCallback didPageFlip_;
+    void *context;
 } gles_demo;
 
-gles_demo *initGLESDemo(int width, int height);
-void didPageFlip(GLuint gl_framebuffer, unsigned long usec);
+int initGLESDemo(int width, int height);
+void drawPageFlip(void *context, GLuint gl_framebuffer, unsigned long usec);
+void *getGLESContext(void);
 
 #endif

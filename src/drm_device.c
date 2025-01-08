@@ -100,6 +100,7 @@ static ModesetDev *getConnector(int drmfd)
 
 static int pageFlip(drm_dev_t *drm, uint32_t fb_id, void* user_data) {
     assert(drm);
+    printf("mode set crtc fb_id %d\n",fb_id);
     int ret = drmModePageFlip(drm->drmfd, drm->dev->crtc, fb_id, DRM_MODE_PAGE_FLIP_EVENT, user_data);
     if (ret) {
         printf("failed to queue page flip\n");
@@ -112,6 +113,7 @@ int modeSetCrtc(drm_dev_t *drm, uint32_t fb_id)
 {
     assert(drm);
     drm->dev->saved_crtc = drmModeGetCrtc(drm->drmfd, drm->dev->crtc);
+    printf("mode set crtc fb_id %d\n",fb_id);
     int ret = drmModeSetCrtc(drm->drmfd, drm->dev->crtc, fb_id, 0, 0, &drm->dev->conn, 1, &drm->dev->mode);
     if (ret) {
         printf( "cannot set CRTC for connector %u (%d): %m\n", drm->dev->conn, errno);
@@ -136,14 +138,14 @@ static void freeModeSetCrtc(drm_dev_t *drm)
 
 int getHeight(drm_dev_t *drm)
 {
-    assert(drm);    
-    return drm->dev->mode.hdisplay;
+    assert(drm); 
+    return drm->dev->mode.vdisplay;
 }
 
 int getWidth(drm_dev_t *drm)
 {
     assert(drm);    
-    return drm->dev->mode.vdisplay;
+    return drm->dev->mode.hdisplay;
 }
 
 int getDrmFd(drm_dev_t *drm)
@@ -170,7 +172,7 @@ void drmFlushWait(drm_dev_t * drm, void *user_data, uint32_t fb_id)
     drmEventContext evctx = {};
     evctx.version = DRM_EVENT_CONTEXT_VERSION;
     evctx.page_flip_handler = onModesetPageFlipEvent;
-
+    
     if (!pageFlip(drm, fb_id, user_data)) {
         printf("page flip error\n");
         return;
@@ -179,7 +181,9 @@ void drmFlushWait(drm_dev_t * drm, void *user_data, uint32_t fb_id)
     while(drm->req) {
         int ret;
         do {
+            printf("-----\n");
             ret = poll(&pfd, 1, -1);
+            printf("-----\n");
         } while(ret == -1 && errno == EINTR);
 
         if(ret > 0) {
@@ -191,6 +195,55 @@ void drmFlushWait(drm_dev_t * drm, void *user_data, uint32_t fb_id)
         }
     }
 }
+
+void Run(drm_dev_t * drm, void *user_data, uint32_t fb_id) {
+    fd_set fds;
+    drmEventContext evctx = {};
+    evctx.version = DRM_EVENT_CONTEXT_VERSION;
+    evctx.page_flip_handler = onModesetPageFlipEvent;
+
+    egl_window *egl = (egl_window *)user_data;
+   
+    while (drm->req) {
+        if (!pageFlip(drm, fb_id, user_data)) {
+            printf("page flip error\n");
+            return;
+        }
+
+        egl->page_flip_pending_ = 1;
+        while (egl->page_flip_pending_) {
+            FD_ZERO(&fds);
+            FD_SET(0, &fds);
+            FD_SET(drm->drmfd, &fds);
+            int ret = select(drm->drmfd + 1, &fds, NULL, NULL, NULL);
+            if (ret < 0) {
+                fprintf(stderr, "select timeout!\n");
+                return;
+            } else if (ret == 0) {
+                fprintf(stderr, "select timeout!\n");
+                return;
+            }
+
+            if (FD_ISSET(0, &fds)) {
+                drm->req = 0;
+                fprintf(stderr, "select timeout!\n");
+            }
+
+            if (FD_ISSET(drm->drmfd, &fds)) {
+                drmHandleEvent(drm->drmfd, &evctx);
+            }
+        }
+
+        if (FD_ISSET(0, &fds)) {
+            printf("exit due to user-input\n");
+        }
+    }
+
+   
+    
+    return;
+}
+
 
 drm_dev_t *initDRMDevice(const char *card)
 {

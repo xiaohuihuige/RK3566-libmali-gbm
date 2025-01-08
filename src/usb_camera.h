@@ -8,6 +8,8 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include "egl_context.h"
+#include <poll.h>
+#include <fcntl.h>
 
 #define VIDEO_FORMAT V4L2_PIX_FMT_MJPEG //V4L2_PIX_FMT_YUYV
 #define BUFFER_COUNT 4
@@ -31,5 +33,6 @@ typedef struct {
 usb_camera *create_usb_camera(const char *dev_name, int width, int height);
 void release_video(usb_camera *usb_dev);
 int get_data(usb_camera *usb_dev, FrameBuf *frame_buf);
+int get_data_from_poll(usb_camera * usb_dev, FrameBuf *frame_buf);//读取数据到buf
 
 #endif

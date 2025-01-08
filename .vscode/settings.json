@@ -2,6 +2,11 @@
     "files.associations": {
         "stdio.h": "c",
         "string.h": "c",
-        "stdlib.h": "c"
+        "stdlib.h": "c",
+        "gles_triangle.h": "c",
+        "gles_camera.h": "c",
+        "gl2.h": "c",
+        "egl_context.h": "c",
+        "stdatomic.h": "c"
     }
 }

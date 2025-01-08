@@ -4,12 +4,19 @@
 #include <stdlib.h>
 #include <assert.h>
 
+void setGLESContext(egl_window *egl, void *gles_context)
+{
+    assert(egl);
+    egl->gles_context_ = gles_context;
+}
+
 static void EGLSyncFence(EGLGlue *egl_context_) 
 {
     if (egl_context_->egl_sync_supported) {
         EGLSyncKHR sync = egl_context_->CreateSyncKHR(egl_context_->display, EGL_SYNC_FENCE_KHR, NULL);
         glFlush();
-        egl_context_->ClientWaitSyncKHR(egl_context_->display, sync, 0, EGL_FOREVER_KHR);
+        int ret = egl_context_->ClientWaitSyncKHR(egl_context_->display, sync, 0, EGL_FOREVER_KHR);
+        printf("sync--------%d\n",ret);
     } else {
         glFinish();
     }
@@ -34,10 +41,11 @@ void didEGLPageFlip(unsigned int sec, unsigned int usec, void *data)
     assert(data);
     printfEglFPS(usec);
     egl_window *egl = (egl_window *)data;
+    egl->page_flip_pending_ = 0;
     glBindFramebuffer(GL_FRAMEBUFFER, egl->framebuffers_[egl->front_buffer_].gl_fb);
     printf("fb_id %d\n", egl->framebuffers_[egl->front_buffer_].fb_id);
     if (egl->callback_)
-        egl->callback_(egl->framebuffers_[egl->front_buffer_].gl_fb, sec * 1000000 + usec);
+        egl->callback_(egl->gles_context_, egl->framebuffers_[egl->front_buffer_].gl_fb, sec * 1000000 + usec);
     EGLSyncFence(&egl->egl_context_);
 }
 
@@ -148,7 +156,7 @@ static int initializeEGL(EGLGlue *egl_context_)
 }
 
 
-static int createframebuffer(int width, int height, int drmfd, egl_window *egl, int number) 
+static int createframebuffer(int height, int width, int drmfd, egl_window *egl, int number) 
 {
     assert(egl);
 
@@ -210,11 +218,13 @@ static int createframebuffer(int width, int height, int drmfd, egl_window *egl, 
         return GLFW_FALS;
     }
     printf("buffer fd %d,%d\n", egl->framebuffers_[number].fb_id, egl->framebuffers_[number].gl_fb);
+    printf("egl window width: %d, height: %d\n",width, height);
     return GLFW_TRUE;
 }
 
 egl_window *initEglWindow(int drmfd, int height, int width, SwapBuffersCallback callback_)
 {
+    printf("egl window width: %d, height: %d\n",width, height);
     egl_window *egl = (egl_window *)malloc(sizeof(egl_window));
     if (!egl) 
         return NULL;
@@ -234,7 +244,7 @@ egl_window *initEglWindow(int drmfd, int height, int width, SwapBuffersCallback 
 
         egl->front_buffer_ = 0;
         egl->callback_ = callback_;
-
+        egl->page_flip_pending_ = 1;
         return egl;    
     } while(0);
 

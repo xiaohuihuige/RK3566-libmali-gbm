@@ -74,19 +74,19 @@ usb_camera *create_usb_camera(const char *dev_name, int width, int height)
     }
 
     // Print Stream Format
-    printf("Stream Format Informations:");
-    printf(" type: %d", fmt.type);
-    printf(" width: %d", fmt.fmt.pix.width);
-    printf(" height: %d", fmt.fmt.pix.height);
+    printf("Stream Format Informations: \n");
+    printf(" type: %d\n", fmt.type);
+    printf(" width: %d\n", fmt.fmt.pix.width);
+    printf(" height: %d\n", fmt.fmt.pix.height);
 
     char fmtstr[8];
     memset(fmtstr, 0, 8);
     memcpy(fmtstr, &fmt.fmt.pix.pixelformat, 4);
-    printf(" pixelformat: %s", fmtstr);
-    printf(" field: %d", fmt.fmt.pix.field);
-    printf(" bytesperline: %d", fmt.fmt.pix.bytesperline);
-    printf(" sizeimage: %d", fmt.fmt.pix.sizeimage);
-    printf(" colorspace: %d", fmt.fmt.pix.colorspace);
+    printf(" pixelformat: %s\n", fmtstr);
+    printf(" field: %d\n", fmt.fmt.pix.field);
+    printf(" bytesperline: %d\n", fmt.fmt.pix.bytesperline);
+    printf(" sizeimage: %d\n", fmt.fmt.pix.sizeimage);
+    printf(" colorspace: %d\n", fmt.fmt.pix.colorspace);
     //printf(" priv: %d", fmt.fmt.pix.priv);
     //printf(" raw_date: %s", fmt.fmt.raw_data);
 
@@ -167,6 +167,45 @@ int get_data(usb_camera * usb_dev, FrameBuf *frame_buf)//读取数据到buf
         return GLFW_FALS;
     }
 
+    // Get frame
+    // 捕获数据
+    if (ioctl(usb_dev->fd, VIDIOC_DQBUF, &usb_dev->buf) < 0) {
+        printf("VIDIOC_DQBUF failed\n");
+        return GLFW_FALS;
+    }
+
+    frame_buf->start  = usb_dev->mmap_buffer[usb_dev->buf.index].start;
+    frame_buf->length = usb_dev->buf.bytesused;
+
+    // Re-queen buffer
+    // 将处理完毕的视频帧重新放回驱动程序的队列中，以供下一次捕获
+    if (ioctl(usb_dev->fd, VIDIOC_QBUF, &usb_dev->buf) < 0) {
+        printf("VIDIOC_QBUF failed\n");
+        return GLFW_FALS;
+    }
+
+    return GLFW_TRUE;
+}
+
+int get_data_from_poll(usb_camera * usb_dev, FrameBuf *frame_buf)//读取数据到buf
+{
+    struct pollfd pfd;
+    pfd.fd = usb_dev->fd;
+    pfd.events = POLLIN | POLLPRI; 
+  
+    int ret;
+    do {
+        ret = poll(&pfd, 1, 0);
+    } while(ret == -1 && errno == EINTR);
+
+    if(ret < 0) {
+        printf("poll failed: %s, %d\n", strerror(errno), ret);
+        return GLFW_FALS;
+    } else if (ret == 0)
+    {
+        return GLFW_TRUE;
+    }
+    
     // Get frame
     // 捕获数据
     if (ioctl(usb_dev->fd, VIDIOC_DQBUF, &usb_dev->buf) < 0) {

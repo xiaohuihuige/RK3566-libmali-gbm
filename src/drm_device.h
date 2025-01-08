@@ -31,5 +31,6 @@ int modeSetCrtc(drm_dev_t *drm, uint32_t fb_id);
 int getWidth(drm_dev_t *drm);
 int getHeight(drm_dev_t *drm);
 int getDrmFd(drm_dev_t *drm);
+void Run(drm_dev_t * drm, void *user_data, uint32_t fb_id);
 
 #endif

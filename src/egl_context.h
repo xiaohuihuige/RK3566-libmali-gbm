@@ -15,7 +15,7 @@
 #define GLFW_TRUE   1
 #define GLFW_FALS   0
 
-typedef void (*SwapBuffersCallback)(GLuint, unsigned long);
+typedef void (*SwapBuffersCallback)(void*, GLuint, unsigned long);
 
 typedef struct {
     EGLDisplay display;
@@ -47,9 +47,12 @@ typedef struct
     EGLGlue egl_context_;
     Framebuffer framebuffers_[NUM_BUFFERS];
     SwapBuffersCallback callback_;
+    void *gles_context_;
+    int page_flip_pending_;
 } egl_window;
 
 egl_window *initEglWindow(int drmfd, int height, int width, SwapBuffersCallback callback_);
 void didEGLPageFlip(unsigned int sec, unsigned int usec, void *data);
+void setGLESContext(egl_window *egl, void *gles_context);
 
 #endif
