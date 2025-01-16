@@ -1,0 +1,3 @@
+/home/lckfb/share/RK3566-libmali-gbm/build/CMakeFiles/edit_cache.dir
+/home/lckfb/share/RK3566-libmali-gbm/build/CMakeFiles/rebuild_cache.dir
+/home/lckfb/share/RK3566-libmali-gbm/build/CMakeFiles/gbm_es2_demo.dir

@@ -100,7 +100,6 @@ static ModesetDev *getConnector(int drmfd)
 
 static int pageFlip(drm_dev_t *drm, uint32_t fb_id, void* user_data) {
     assert(drm);
-    printf("mode set crtc fb_id %d\n",fb_id);
     int ret = drmModePageFlip(drm->drmfd, drm->dev->crtc, fb_id, DRM_MODE_PAGE_FLIP_EVENT, user_data);
     if (ret) {
         printf("failed to queue page flip\n");
@@ -113,7 +112,6 @@ int modeSetCrtc(drm_dev_t *drm, uint32_t fb_id)
 {
     assert(drm);
     drm->dev->saved_crtc = drmModeGetCrtc(drm->drmfd, drm->dev->crtc);
-    printf("mode set crtc fb_id %d\n",fb_id);
     int ret = drmModeSetCrtc(drm->drmfd, drm->dev->crtc, fb_id, 0, 0, &drm->dev->conn, 1, &drm->dev->mode);
     if (ret) {
         printf( "cannot set CRTC for connector %u (%d): %m\n", drm->dev->conn, errno);
@@ -158,7 +156,6 @@ static void onModesetPageFlipEvent(int fd, unsigned int frame, unsigned int sec,
 {
     assert(data);  
     didEGLPageFlip(sec, usec, data);
-    printf("flip\n");
 }
 
 void drmFlushWait(drm_dev_t * drm, void *user_data, uint32_t fb_id)
@@ -181,9 +178,7 @@ void drmFlushWait(drm_dev_t * drm, void *user_data, uint32_t fb_id)
     while(drm->req) {
         int ret;
         do {
-            printf("-----\n");
             ret = poll(&pfd, 1, -1);
-            printf("-----\n");
         } while(ret == -1 && errno == EINTR);
 
         if(ret > 0) {
@@ -239,8 +234,7 @@ void Run(drm_dev_t * drm, void *user_data, uint32_t fb_id) {
         }
     }
 
-   
-    
+
     return;
 }
 
@@ -269,4 +263,26 @@ drm_dev_t *initDRMDevice(const char *card)
         free(drm_dev);
         
     return NULL;
+}
+
+void uinitDRMDevice(drm_dev_t *drm_dev)
+{
+    if (!drm_dev || drm_dev->drmfd <= 0) 
+        return;
+
+    drmModeSetCrtc(drm_dev->drmfd, 
+                    drm_dev->dev->saved_crtc->crtc_id, 
+                    drm_dev->dev->saved_crtc->buffer_id, 
+                    drm_dev->dev->saved_crtc->x,
+                    drm_dev->dev->saved_crtc->y, 
+                    &drm_dev->dev->conn, 
+                    1, 
+                    &drm_dev->dev->saved_crtc->mode);
+    drmModeFreeCrtc(drm_dev->dev->saved_crtc);
+
+    close(drm_dev->drmfd);
+
+    printf("free DRM Device %p\n", drm_dev);
+
+    free(drm_dev);
 }

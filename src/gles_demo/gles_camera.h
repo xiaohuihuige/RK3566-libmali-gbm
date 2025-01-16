@@ -5,6 +5,7 @@
 
 #include <GLES2/gl2.h>
 #include "egl_context.h"
+#include "egl_stream_texture.h"
 
 typedef struct  
 {
@@ -13,9 +14,10 @@ typedef struct
    GLuint textureId;
    int width;
    int height;
+   stream_texture_t *stream;
 } gles_camera;
 
-gles_camera *initDemo(int width, int height);
+gles_camera *initDemo(egl_window *egl, int width, int height);
 void didPageFlip(void *context, GLuint gl_framebuffer, unsigned long usec);
 
 #endif

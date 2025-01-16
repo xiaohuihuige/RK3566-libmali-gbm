@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.10)
 project(gbm_es2_demo)
 
-option(GLES_TRIANGLE_DEMO "Build shared libraries" ON)
-option(GLES_CAMERA_DEMO "Build shared libraries" OFF)
+option(GLES_TRIANGLE_DEMO "Build shared libraries" OFF)
+option(GLES_CAMERA_DEMO "Build shared libraries" ON)
 
 if(GLES_TRIANGLE_DEMO)
     add_definitions(-DGLES_TRIANGLE_DEMO)

@@ -1,5 +1,4 @@
 #include "gles_camera.h"
-#include <GLFW/glfw3.h>
 #include "stb_image.h"
 #include <stdlib.h>
 #include "esUtil.h"
@@ -11,23 +10,23 @@ GLuint CreateSimpleTexture2D( )
 {
 
    // 2x2 Image, 3 bytes per pixel (R, G, B)
-   GLubyte pixels[4 * 4] =
+   GLubyte pixels[4 * 3] =
    {
-        100, 255,   0,   0, // Red
-        100,0, 255,   0, // Green
-        100,0,   0, 255, // Blue
-        100,255, 255,   0  // Yellow
+        255,   0,   0, // Red
+        0, 255,   0, // Green
+        0,   0, 255, // Blue
+        255, 255,   0  // Yellow
    };
 
    // Use tightly packed data
-   glPixelStorei ( GL_UNPACK_ALIGNMENT, 1 );
+   //glPixelStorei ( GL_UNPACK_ALIGNMENT, 1 );
 
    // Load the texture
-   glTexImage2D ( GL_TEXTURE_2D, 0, GL_RGBA, 2, 2, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels );
+   glTexImage2D ( GL_TEXTURE_2D, 0, GL_RGB, 2, 2, 0, GL_RGB, GL_UNSIGNED_BYTE, pixels );
 
-   // Set the filtering mode
-   glTexParameteri ( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
-   glTexParameteri ( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST );
+//    // Set the filtering mode
+//    glTexParameteri ( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
+//    glTexParameteri ( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST );
 }
 
 ///
@@ -103,8 +102,11 @@ void Draw(gles_camera *camera)
 {
     GLushort indices[] = { 0, 1, 2, 0, 2, 3 };
      // Clear the color buffer
-    glClearColor ( 1.0f, 1.0f, 1.0f, 0.0f );
-    glClear ( GL_COLOR_BUFFER_BIT );
+    glClearColor(0.0, 0.0, 0.0, 1.0);
+    glClear(GL_COLOR_BUFFER_BIT);
+    CreateSimpleTexture2D( );
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, GetTextureID(camera->stream));
     glDrawElements ( GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, indices );
 }
 
@@ -120,7 +122,7 @@ void ShutDown(gles_camera *camera)
    glDeleteProgram(camera->programObject);
 }
 
-gles_camera *initDemo(int width, int height)
+gles_camera *initDemo(egl_window *egl, int width, int height)
 {
     gles_camera* camera = (gles_camera*)malloc(sizeof(gles_camera));
     if (!camera) {
@@ -131,7 +133,9 @@ gles_camera *initDemo(int width, int height)
     {
         return NULL;
     }
-    printf("----%p\n", camera);
+
+    camera->stream = createStreamTexture(egl, width, height);
+
     return camera;
 }
 
@@ -139,7 +143,6 @@ void didPageFlip(void *context, GLuint gl_framebuffer, unsigned long usec)
 {
     assert(context);
     gles_camera *camera = (gles_camera *)context;
-    printf("----%p\n", camera);
     Draw(camera);
 }
 

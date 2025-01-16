@@ -19,7 +19,7 @@ int main()
         return EXIT_FAILURE;
     }
 
-    if (!initGLESDemo(getWidth(drm), getHeight(drm))) {
+    if (!initGLESDemo(egl, getWidth(drm), getHeight(drm))) {
         printf("initGLESDemo error\n");
         return EXIT_FAILURE;
     }

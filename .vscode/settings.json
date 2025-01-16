@@ -7,6 +7,7 @@
         "gles_camera.h": "c",
         "gl2.h": "c",
         "egl_context.h": "c",
-        "stdatomic.h": "c"
+        "stdatomic.h": "c",
+        "egl_stream_texture.h": "c"
     }
 }

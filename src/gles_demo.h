@@ -4,7 +4,7 @@
 #include <GLES2/gl2.h>
 #include "egl_context.h"
 
-typedef void *(*initGLESDmoe)(int, int);
+typedef void *(*initGLESDmoe)(egl_window, int, int);
 
 typedef struct  
 {
@@ -13,7 +13,7 @@ typedef struct
     void *context;
 } gles_demo;
 
-int initGLESDemo(int width, int height);
+int initGLESDemo(egl_window *egl, int width, int height);
 void drawPageFlip(void *context, GLuint gl_framebuffer, unsigned long usec);
 void *getGLESContext(void);
 

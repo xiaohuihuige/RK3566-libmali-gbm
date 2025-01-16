@@ -11,7 +11,7 @@
 
 static gles_demo *global_demo= NULL;
 
-int initGLESDemo(int width, int height)
+int initGLESDemo(egl_window *egl, int width, int height)
 {
     printf("GLESDemo width: %d, height: %d\n",width, height);
     global_demo = (gles_demo *)malloc(sizeof(gles_demo));
@@ -19,11 +19,11 @@ int initGLESDemo(int width, int height)
         return GLFW_FALS;
     }
 
-    global_demo->demoCallback_ = initDemo;
+    global_demo->demoCallback_ = (void *)initDemo;
     global_demo->didPageFlip_  = didPageFlip;
 
     if (global_demo->demoCallback_)
-        global_demo->context = global_demo->demoCallback_(width, height);
+        global_demo->context = global_demo->demoCallback_(egl, width, height);
 
     return GLFW_TRUE;
 }

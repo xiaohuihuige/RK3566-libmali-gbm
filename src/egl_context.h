@@ -52,6 +52,8 @@ typedef struct
 } egl_window;
 
 egl_window *initEglWindow(int drmfd, int height, int width, SwapBuffersCallback callback_);
+void destroyEglWindow(egl_window *elg)
+
 void didEGLPageFlip(unsigned int sec, unsigned int usec, void *data);
 void setGLESContext(egl_window *egl, void *gles_context);
 

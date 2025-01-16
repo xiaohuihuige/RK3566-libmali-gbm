@@ -16,7 +16,6 @@ static void EGLSyncFence(EGLGlue *egl_context_)
         EGLSyncKHR sync = egl_context_->CreateSyncKHR(egl_context_->display, EGL_SYNC_FENCE_KHR, NULL);
         glFlush();
         int ret = egl_context_->ClientWaitSyncKHR(egl_context_->display, sync, 0, EGL_FOREVER_KHR);
-        printf("sync--------%d\n",ret);
     } else {
         glFinish();
     }
@@ -43,7 +42,6 @@ void didEGLPageFlip(unsigned int sec, unsigned int usec, void *data)
     egl_window *egl = (egl_window *)data;
     egl->page_flip_pending_ = 0;
     glBindFramebuffer(GL_FRAMEBUFFER, egl->framebuffers_[egl->front_buffer_].gl_fb);
-    printf("fb_id %d\n", egl->framebuffers_[egl->front_buffer_].fb_id);
     if (egl->callback_)
         egl->callback_(egl->gles_context_, egl->framebuffers_[egl->front_buffer_].gl_fb, sec * 1000000 + usec);
     EGLSyncFence(&egl->egl_context_);
@@ -218,7 +216,6 @@ static int createframebuffer(int height, int width, int drmfd, egl_window *egl, 
         return GLFW_FALS;
     }
     printf("buffer fd %d,%d\n", egl->framebuffers_[number].fb_id, egl->framebuffers_[number].gl_fb);
-    printf("egl window width: %d, height: %d\n",width, height);
     return GLFW_TRUE;
 }
 
@@ -252,4 +249,26 @@ egl_window *initEglWindow(int drmfd, int height, int width, SwapBuffersCallback 
         free(egl);
 
     return NULL;
+}
+
+void destroyEglWindow(egl_window *egl)
+{
+    if (!egl)
+        return;
+
+    for (int i = 0, i < NUM_BUFFERS; i++)
+    {
+        glDeleteFramebuffers(1, &egl->framebuffers_[i].gl_fb);
+        glDeleteTextures(1, &egl->framebuffers_[i].gl_tex);
+        egl->egl_context_.DestroyImageKHR(egl_.display, egl->framebuffers_[i].image);
+        drmModeRmFB(drm_->GetFD(), egl->framebuffers_[i].fb_id);
+        close(egl->framebuffers_[i].fd);
+        gbm_bo_destroy(egl->framebuffers_[i].bo);
+    }
+
+    eglDestroyContext(egl->egl_context_.display, egl->egl_context_.context);
+    eglTerminate(egl->egl_context_.display);
+    gbm_device_destroy(egl->gbm_);
+
+    free(egl);
 }
